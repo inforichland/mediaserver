@@ -41,21 +41,21 @@
   (reduce #'(lambda (x a)
 	      (logior (ash x 7) a)) bytes :initial-value 0))
 
+(defun read-n-from (stream n &optional (start 0))
+  (if (not (open-stream-p stream))
+      nil
+      (let ((arr (make-array n)))
+	(file-position stream start)
+	(read-sequence arr stream)
+	arr)))
+
 (defun id3-version (filename)
   (with-open-file (file filename)
     (let* ((len (file-length file))
-	   (tagpos (- len 128))
-	   (tag (make-array 3)))
-      (if (<= tagpos 0)
-	  'unknown
-	  (progn
-	    (file-position file tagpos)
-	    (read-sequence tag file)
-	    (cond ((string= (coerce tag 'string) "TAG") 'id3v1)
-		  (t (progn
-		       (file-position file 0)
-		       (read-sequence tag file)
-		       (if (string= (coerce tag 'string) "ID3")
-			   'id3v2
-			   'unknown)))))))))
-
+	   (tagpos (- len 128)))
+      (cond ((< len 128) 'unknown)
+	    ((string= (coerce (read-n-from file 3) 'string) "ID3") 'id3v2)
+	    (t
+	     (if (string= (coerce (read-n-from file 3 tagpos) 'string) "TAG")
+		 'id3v2
+		 'unknown))))))
