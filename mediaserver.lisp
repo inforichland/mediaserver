@@ -14,6 +14,8 @@
 
 (defparameter *songs* nil)
 
+(defvar *ascii-characters*  (loop for i from 32 to 126 collect (code-char i)))
+
 (defun search-media (directory)
   (declare (ftype (function (string) (vector t)) search-media))
   (let ((songs (make-array 100 :element-type 'pathname :adjustable t :fill-pointer 0)))
@@ -37,6 +39,9 @@
   album
   genre)
 
+(defun filter-printable-chars (string)
+  (remove-if-not #'(lambda (ch) (member ch (coerce *ascii-characters* 'list))) string))
+
 (defun synchsafe (bytes)
   (reduce #'(lambda (x a)
 	      (logior (ash x 7) a)) bytes :initial-value 0))
@@ -57,5 +62,38 @@
 	    ((string= (coerce (read-n-from file 3) 'string) "ID3") 'id3v2)
 	    (t
 	     (if (string= (coerce (read-n-from file 3 tagpos) 'string) "TAG")
-		 'id3v2
+		 'id3v1
 		 'unknown))))))
+
+(defun file-size (filename)
+  (with-open-file (f filename) (file-length f)))
+
+(defmacro read-and-filter (seq stream)
+  `(progn
+     (read-sequence ,seq ,stream)
+     (setf ,seq (filter-printable-chars ,seq))))
+
+(defun read-id3-tags (filename)
+  (let ((version (id3-version filename)))
+    (case version
+      ('id3v1 (read-id3v1-tags filename))
+      ;('id3v2 (read-id3v2-tags filename))
+      (otherwise nil))))
+
+(defun read-id3v1-tags (filename)
+  (let ((length (file-size filename)))
+    (if (< length 128)
+	nil
+	(let ((pos (- length 125))
+	      (song (make-song-info :title (make-string 30)
+				    :artist (make-string 30)
+				    :album (make-string 30)
+				    :genre 0)))
+	  (with-open-file (file filename)
+	    (file-position file pos)
+	    (read-and-filter (song-info-title song) file)
+	    (read-and-filter (song-info-artist song) file)
+	    (read-and-filter (song-info-album song) file)
+	    (file-position file (- length 1))
+	    (setf (song-info-genre song) (char-code (coerce (read file) 'character))))
+	  song))))
